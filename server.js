@@ -14,13 +14,44 @@ export default function(opt) {
     opt = opt || {};
 
     const validHosts = (opt.domain) ? [opt.domain] : undefined;
+    console.log("validHosts",validHosts);
     const myTldjs = tldjs.fromUserSettings({ validHosts });
     const landingPage = 'https://demo.senzdash.com/Newisenzrwebapp/sign-in ';
 
     function GetClientIdFromHostname(hostname) {
-        return myTldjs.getSubdomain(hostname);
-    }
+        if (hostname.includes('.nip.io')) {
 
+            // Custom logic for nip.io
+            const parts = hostname.split('.');
+            const subdomainParts = [];
+            for (const part of parts) {
+                // Stop when part looks like an IP segment
+                if (/^\d+$/.test(part)) break;
+                subdomainParts.push(part);
+            }
+            console.log("subpart",subdomainParts);
+            return subdomainParts.join('.');
+        } else {
+            // Fallback to tldjs for standard domains
+            return myTldjs.getSubdomain(hostname);
+        }
+    }
+    
+
+    // function GetClientIdFromHostname(hostname) {
+    //     // Example: 'blue-puma-69.192.168.1.3.nip.io'
+    //     const parts = hostname.split('.');
+    //     console.log('hostname',hostname);
+    //     const subdomainParts = [];
+    //     for (const part of parts) {
+    //         // Stop collecting when part is an IP segment
+    //         if (/^\d+$/.test(part)) break;
+    //         subdomainParts.push(part);
+    //     }
+    
+    //     return subdomainParts.join('.');
+    // }
+    
     const manager = new ClientManager(opt);
 
     const schema = opt.secure ? 'https' : 'http';
@@ -38,6 +69,7 @@ export default function(opt) {
 
     router.get('/api/tunnels/:id/status', async (ctx, next) => {
         const clientId = ctx.params.id;
+        console.log("/api/tunnels",clientId);
         const client = manager.getClient(clientId);
         if (!client) {
             ctx.throw(404);
@@ -73,8 +105,9 @@ export default function(opt) {
             console.log('making new client with id %s', reqId);
             debug('making new client with id %s', reqId);
             const info = await manager.newClient(reqId);
-
-            const url = schema + '://' + info.id + '.' + ctx.request.host;
+            const nipIoDomain = '192.168.1.5.nip.io';
+            const url= 'http://'+info.id+'.'+nipIoDomain;
+           //const url = schema + '://' + info.id + '.' + ctx.request.host;
            // const url = schema + '://' +info.id+'.192.168.1.3' + '.' + 'loca.lt';
             info.url = url;
             ctx.body = info;
@@ -112,11 +145,15 @@ export default function(opt) {
         //     };
         //     return;
         // }
+        if (!reqId || reqId === 'favicon.ico') {
+            await next();
+            return;
+        }
         console.log("making new client id %s", reqId);
         debug('making new client with id %s', reqId);
         const info = await manager.newClient(reqId);
 
-        const url = schema + '://' + info.id + '.' + 'nip.io';
+        const url = schema + '://' + info.id + '.mytunnel';
         info.url = url;
         ctx.body = info;
         return;
@@ -128,7 +165,7 @@ export default function(opt) {
 
     server.on('request', (req, res) => {
         // without a hostname, we won't know who the request is for
-       // console.log("server client request",req.headers);
+       console.log("server client request",req.headers);
         const hostname = req.headers.host;
         if (!hostname) {
             res.statusCode = 400;
@@ -142,7 +179,8 @@ export default function(opt) {
             return;
         }
 
-        const client = manager.getClient(clientId);
+         const client = manager.getClient(clientId);
+        // console.log(client);
         if (!client) {
             res.statusCode = 404;
             res.end('404');
