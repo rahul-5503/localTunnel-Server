@@ -33,6 +33,7 @@ export default function(opt) {
             return subdomainParts.join('.');
         } else {
             // Fallback to tldjs for standard domains
+            console.log("GetClientIdFromHostname",myTldjs.getSubdomain(hostname))
             return myTldjs.getSubdomain(hostname);
         }
     }
@@ -102,13 +103,15 @@ export default function(opt) {
         console.log("isnewclientrequest",isNewClientRequest);        
         if (isNewClientRequest) {
             const reqId = hri.random();
+            
             console.log('making new client with id %s', reqId);
             debug('making new client with id %s', reqId);
             const info = await manager.newClient(reqId);
-            const nipIoDomain = '192.168.1.5.nip.io';
-            const url= 'http://'+info.id+'.'+nipIoDomain;
+            const nipIoDomain = 'tunnel.autosecnextgen.com/';            
+           // const nipIoDomain ='192.168.1.2.nip.io'
+            const url= 'https' + '://' + info.id + '.' + nipIoDomain;
            //const url = schema + '://' + info.id + '.' + ctx.request.host;
-           // const url = schema + '://' +info.id+'.192.168.1.3' + '.' + 'loca.lt';
+           //const url = 'http' + '://' +info.id+'.192.168.1.2' + '.' + 'nip.io';
             info.url = url;
             ctx.body = info;
             console.log("url",info.url);
@@ -174,13 +177,14 @@ export default function(opt) {
         }
 
         const clientId = GetClientIdFromHostname(hostname);
+        console.log("clientId",clientId);
         if (!clientId) {
             appCallback(req, res);
             return;
         }
 
          const client = manager.getClient(clientId);
-        // console.log(client);
+         console.log(client);
         if (!client) {
             res.statusCode = 404;
             res.end('404');

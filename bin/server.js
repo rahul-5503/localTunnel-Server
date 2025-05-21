@@ -17,7 +17,7 @@ const argv = optimist
         describe: 'use this flag to indicate proxy over https'
     })
     .options('port', {
-        default: '80',
+        default: '3000',
         describe: 'listen on this port for outside requests'
     })
     .options('address', {
@@ -25,6 +25,7 @@ const argv = optimist
         describe: 'IP address to bind to'
     })
     .options('domain', {
+        default:'azurewebsites.net',
         describe: 'Specify the base domain name. This is optional if hosting localtunnel from a regular example.com domain. This is required if hosting a localtunnel server from a subdomain (i.e. lt.example.dom where clients will be client-app.lt.example.come)',
     })
     .options('max-sockets', {
@@ -44,7 +45,9 @@ const server = CreateServer({
     domain: argv.domain,
 });
 
-server.listen(argv.port, argv.address, () => {
+
+const port = process.env.PORT || argv.port || 3000;
+server.listen(port, argv.address, () => {
     console.log("server running");
     console.log('server listening on port: %d', server.address().port);
     debug('server listening on port: %d', server.address().port);

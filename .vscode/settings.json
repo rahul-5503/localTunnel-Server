@@ -1,0 +1,8 @@
+{
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ],
+    "appService.defaultWebAppToDeploy": "/subscriptions/a9e3c425-4efa-4971-af7e-cf533e0b188e/resourceGroups/PaidUserAppGroup/providers/Microsoft.Web/sites/secsystemvideogwtunnel",
+    "appService.deploySubpath": "."
+}
