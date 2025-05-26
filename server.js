@@ -108,7 +108,7 @@ export default function(opt) {
             debug('making new client with id %s', reqId);
             const info = await manager.newClient(reqId);
             const nipIoDomain = 'tunnel.autosecnextgen.com/';            
-           // const nipIoDomain ='192.168.1.2.nip.io'
+            //const nipIoDomain ='192.168.1.8.nip.io'
             const url= 'https' + '://' + info.id + '.' + nipIoDomain;
            //const url = schema + '://' + info.id + '.' + ctx.request.host;
            //const url = 'http' + '://' +info.id+'.192.168.1.2' + '.' + 'nip.io';
