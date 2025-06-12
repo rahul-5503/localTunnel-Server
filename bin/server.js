@@ -43,11 +43,6 @@ const server = CreateServer({
     max_tcp_sockets: argv['max-sockets'],
     secure: argv.secure,
     domain: argv.domain,
-	 tls: {
-        key: '/home/admintunnel/certs/server.key',
-        cert: '/home/admintunnel/certs/server.crt',
-        ca: '/home/admintunnel/certs/ca.crt'
-    }
 });
 
 
