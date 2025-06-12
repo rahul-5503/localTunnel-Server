@@ -3,6 +3,8 @@ import Koa from 'koa';
 import tldjs from 'tldjs';
 import Debug from 'debug';
 import http from 'http';
+import https from 'https';
+import fs from 'fs';
 import { hri } from 'human-readable-ids';
 import Router from 'koa-router';
 
@@ -161,13 +163,28 @@ export default function(opt) {
         ctx.body = info;
         return;
     });
+     const tlsOptions = {
+    key: fs.readFileSync(opt.tls.key),
+    cert: fs.readFileSync(opt.tls.cert),
+    ca: fs.readFileSync(opt.tls.ca),
+    requestCert: true,
+    rejectUnauthorized: false
+};
 
-    const server = http.createServer();
+    const server = http.createServer(tlsOptions);
 
     const appCallback = app.callback();
 
     server.on('request', (req, res) => {
         // without a hostname, we won't know who the request is for
+		const cert = req.socket.getPeerCertificate();
+    const verified = req.client.authorized;
+
+    if (verified) {
+        console.log('✅ Client verified:', cert.subject);
+    } else {
+        console.warn('🚫 Unverified client');
+    }
        console.log("server client request",req.headers);
         const hostname = req.headers.host;
         if (!hostname) {
