@@ -169,14 +169,7 @@ export default function(opt) {
 
     server.on('request', (req, res) => {
         // without a hostname, we won't know who the request is for
-		const cert = req.socket.getPeerCertificate();
-    const verified = req.client.authorized;
-
-    if (verified) {
-        console.log('✅ Client verified:', cert.subject);
-    } else {
-        console.warn('🚫 Unverified client');
-    }
+		
        console.log("server client request",req.headers);
         const hostname = req.headers.host;
         if (!hostname) {
