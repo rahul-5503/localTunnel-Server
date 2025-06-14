@@ -185,22 +185,22 @@ export default function(opt) {
             return;
         }
 
-        // Validate client certificate for direct requests
-        const certValidation = certAuth.validateRawRequest(req);
-        if (!certValidation.valid) {
-            console.log('❌ Certificate validation failed for direct request');
-            res.statusCode = 401;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({
-                error: 'Client certificate authentication required',
-                details: 'Invalid or missing client certificate'
-            }));
-            return;
-        }
+        // Trust certificate info from NGINX headers
+const clientCertVerify = req.headers['x-ssl-client-verify'];
+const clientCertSubject = req.headers['x-ssl-client-s-dn'];
 
-        if (certValidation.info) {
-            console.log('✅ Direct request authenticated:', certValidation.info.commonName);
-        }
+if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
+    console.log('❌ Client certificate verification failed or missing from headers');
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+        error: 'Client certificate not verified by NGINX',
+        details: clientCertVerify || 'No verification result'
+    }));
+    return;
+}
+
+console.log(`✅ Client certificate verified: ${clientCertSubject}`);
 
         const clientId = GetClientIdFromHostname(hostname);
         console.log("clientId", clientId);
@@ -229,16 +229,23 @@ export default function(opt) {
         }
 
         // Validate client certificate for websocket upgrades
-        const certValidation = certAuth.validateRawRequest(req);
-        if (!certValidation.valid) {
-            console.log('❌ Certificate validation failed for websocket upgrade');
-            socket.destroy();
-            return;
-        }
+        // Trust certificate info from NGINX headersconst clientCertVerify = req.headers['x-ssl-client-verify'];
+const clientCertSubject = req.headers['x-ssl-client-s-dn'];
 
-        if (certValidation.info) {
-            console.log('✅ Websocket upgrade authenticated:', certValidation.info.commonName);
-        }
+if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
+    console.log('❌ Client certificate verification failed or missing from headers');
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+        error: 'Client certificate not verified by NGINX',
+        details: clientCertVerify || 'No verification result'
+    }));
+    return;
+}
+
+console.log(`✅ Client certificate verified: ${clientCertSubject}`);
+
+
 
         const clientId = GetClientIdFromHostname(hostname);
         if (!clientId) {
