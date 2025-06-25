@@ -34,7 +34,7 @@ const argv = optimist
         describe: 'enable client certificate authentication'
     })
     .options('require-client-cert', {
-        default: false,
+        default: true,
         describe: 'require client certificate for all requests (only applies when enable-client-certs is true)'
     })
     .options('allowed-clients', {
