@@ -240,7 +240,14 @@ const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
 const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
 
 if (!hasCert && !hasJWT) {
-    console.log('❌ No valid certificate or JWT provided');
+    const rawHeaders = JSON.stringify(req.headers, null, 2);
+    console.warn('❌ No valid certificate or JWT provided');
+    if (!req.headers['authorization']) {
+        console.warn('🕵️ No Authorization header in request');
+    } else {
+        console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
+    }
+    console.warn(rawHeaders);
     res.statusCode = 401;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
@@ -250,6 +257,7 @@ if (!hasCert && !hasJWT) {
     }));
     return;
 }
+
 
 if (hasCert) {
     console.log(`✅ Client certificate verified: ${clientCertSubject}`);
