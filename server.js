@@ -232,8 +232,7 @@ app.use(async (ctx, next) => {
             res.end('Host header is required');
             return;
         }
-
-//        const clientCertVerify = req.headers['x-ssl-client-verify'];
+const clientCertVerify = req.headers['x-ssl-client-verify'];
 const clientCertSubject = req.headers['x-ssl-client-s-dn'];
 const authHeader = req.headers['authorization'];
 
