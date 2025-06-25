@@ -5,6 +5,8 @@ import Debug from 'debug';
 import http from 'http';
 import { hri } from 'human-readable-ids';
 import Router from 'koa-router';
+import jwt from 'koa-jwt';
+import jwksRsa from 'jwks-rsa';
 
 import ClientManager from './lib/ClientManager.js';
 import CertificateAuth from './lib/CertificateAuth.js';
@@ -25,6 +27,19 @@ export default function(opt) {
         allowedClients: opt.allowedClients || ['raspberry-pi-client'], // Add your allowed clients
         requireClientCert: opt.requireClientCert !== false,
         logAll: opt.logCertDetails || false
+    });
+   
+    const jwtAuth = jwt({
+    secret: jwksRsa.koaJwtSecret({
+        jwksUri: 'https://autosecauthsts.azurewebsites.net/.well-known/openid-configuration/jwks',
+        cache: true,
+        rateLimit: true,
+        jwksRequestsPerMinute: 5
+    }),
+    audience: 'AdministratorClientId_api', 
+    issuer: 'https://autosecauthsts.azurewebsites.net',
+    algorithms: ['RS256'],
+    passthrough: true 
     });
 
     function GetClientIdFromHostname(hostname) {
@@ -61,6 +76,39 @@ export default function(opt) {
         }
         await next();
     });
+
+    app.use(jwtAuth);
+
+app.use(async (ctx, next) => {
+    const jwtUser = ctx.state.user;
+    const certUser = ctx.state.clientCert;
+
+    if (certUser) {
+        console.log(`✅ Cert Auth: ${certUser.commonName}`);
+    } else if (jwtUser) {
+        console.log(`✅ JWT Auth: ${jwtUser.sub}`);
+    } else {
+        console.log('❌ No valid authentication found');
+        ctx.status = 401;
+        ctx.body = { error: 'Authentication required (cert or JWT)' };
+        return;
+    }
+
+    await next();
+});
+
+
+    router.get('/api/userinfo', async (ctx) => {
+    if (ctx.state.user) {
+        ctx.body = {
+            authenticated: true,
+            jwtUser: ctx.state.user
+        };
+    } else {
+        ctx.status = 401;
+        ctx.body = { error: 'JWT required' };
+    }
+});
 
     // API Routes with certificate authentication
     router.get('/api/status', async (ctx, next) => {
