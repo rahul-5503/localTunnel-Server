@@ -233,22 +233,29 @@ app.use(async (ctx, next) => {
             return;
         }
 
-        // Trust certificate info from NGINX headers
-const clientCertVerify = req.headers['x-ssl-client-verify'];
+//        const clientCertVerify = req.headers['x-ssl-client-verify'];
 const clientCertSubject = req.headers['x-ssl-client-s-dn'];
+const authHeader = req.headers['authorization'];
 
-if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
-    console.log('❌ Client certificate verification failed or missing from headers');
+const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
+const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
+
+if (!hasCert && !hasJWT) {
+    console.log('❌ No valid certificate or JWT provided');
     res.statusCode = 401;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
-        error: 'Client certificate not verified by NGINX',
-        details: clientCertVerify || 'No verification result'
+        error: 'Client certificate or Bearer token required',
+        certVerify: clientCertVerify || 'missing',
+        jwt: !!authHeader ? 'provided' : 'missing'
     }));
     return;
 }
 
-console.log(`✅ Client certificate verified: ${clientCertSubject}`);
+if (hasCert) {
+    console.log(`✅ Client certificate verified: ${clientCertSubject}`);
+}
+
 
         const clientId = GetClientIdFromHostname(hostname);
         console.log("clientId", clientId);
