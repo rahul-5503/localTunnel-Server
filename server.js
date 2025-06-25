@@ -1,9 +1,10 @@
+import log from 'book';
 import Koa from 'koa';
-import Router from 'koa-router';
-import http from 'http';
 import tldjs from 'tldjs';
 import Debug from 'debug';
+import http from 'http';
 import { hri } from 'human-readable-ids';
+import Router from 'koa-router';
 import jwt from 'koa-jwt';
 import jwksRsa from 'jwks-rsa';
 
@@ -12,16 +13,14 @@ import CertificateAuth from './lib/CertificateAuth.js';
 
 const debug = Debug('localtunnel:server');
 
-export default function (opt = {}) {
-    const app = new Koa();
-    const router = new Router();
-    const validHosts = opt.domain ? [opt.domain] : undefined;
+export default function(opt) {
+    opt = opt || {};
+
+    const validHosts = (opt.domain) ? [opt.domain] : undefined;
     const myTldjs = tldjs.fromUserSettings({ validHosts });
-    const landingPage = 'https://demo.senzdash.com/Newisenzrwebapp/sign-in';
+    const landingPage = 'https://demo.senzdash.com/Newisenzrwebapp/sign-in ';
 
-    const manager = new ClientManager(opt);
-    const schema = opt.secure ? 'https' : 'http';
-
+    // IdentityServer4 setup for JWT auth
     const IDENTITY_SERVER_URL = 'https://autosecauthsts.azurewebsites.net';
     const API_AUDIENCE = 'AdministratorClientId_api';
 
@@ -37,30 +36,13 @@ export default function (opt = {}) {
         algorithms: ['RS256'],
     });
 
-    const certAuth = new CertificateAuth({
-        enabled: opt.enableClientCerts || false,
-        allowedClients: opt.allowedClients || ['raspberry-pi-client'],
-        requireClientCert: false, // Let dual auth control this
-        logAll: opt.logCertDetails || false
-    });
-
-    app.use(certAuth.middleware());
-
     const dualAuth = async (ctx, next) => {
-        if (ctx.state.clientCert) {
-            console.log('✅ Client authenticated via certificate:', ctx.state.clientCert.commonName);
-            return next();
-        }
-
+        if (ctx.state.clientCert) return next();
         try {
-            await bearerAuth(ctx, next);
-            console.log('✅ Client authenticated via JWT:', ctx.state.user?.client_id || ctx.state.user?.sub);
+            return await bearerAuth(ctx, next);
         } catch (err) {
             ctx.status = 401;
-            ctx.body = {
-                error: 'Unauthorized',
-                message: 'Client must authenticate with a valid certificate or bearer token.'
-            };
+            ctx.body = { error: 'Unauthorized - No valid cert or bearer token' };
         }
     };
 
@@ -78,20 +60,29 @@ export default function (opt = {}) {
         }
     }
 
-    router.get('/api/status', async (ctx) => {
-        ctx.body = {
-            tunnels: manager.stats.tunnels,
-            mem: process.memoryUsage(),
-            authenticated: ctx.state.clientCert
-                ? { method: 'cert', subject: ctx.state.clientCert.commonName }
-                : ctx.state.user
-                    ? { method: 'jwt', subject: ctx.state.user.client_id || ctx.state.user.sub }
-                    : null
-        };
+    const manager = new ClientManager(opt);
+    const schema = opt.secure ? 'https' : 'http';
+    const app = new Koa();
+    const router = new Router();
+
+    const certAuth = new CertificateAuth({
+        enabled: opt.enableClientCerts || false,
+        allowedClients: opt.allowedClients || ['raspberry-pi-client'],
+        requireClientCert: opt.requireClientCert !== false,
+        logAll: opt.logCertDetails || false
     });
 
-    // Route protected by cert or JWT
-    router.get('/api/tunnels/:id/status', dualAuth, async (ctx) => {
+    app.use(certAuth.middleware());
+
+    app.use(async (ctx, next) => {
+        if (ctx.state.clientCert) {
+            console.log('✅ Authenticated client (cert):', ctx.state.clientCert.commonName);
+        }
+        await next();
+    });
+
+    // Protected route using either cert or bearer
+    router.get('/api/tunnels/:id/status', dualAuth, async (ctx, next) => {
         const clientId = ctx.params.id;
         const client = manager.getClient(clientId);
         if (!client) {
@@ -102,87 +93,210 @@ export default function (opt = {}) {
         const stats = client.stats();
         ctx.body = {
             connected_sockets: stats.connectedSockets,
-            authenticated: ctx.state.clientCert
-                ? { method: 'cert', subject: ctx.state.clientCert.commonName }
-                : { method: 'jwt', subject: ctx.state.user.client_id || ctx.state.user.sub }
+            client_cert: ctx.state.clientCert || null,
+            jwt_user: ctx.state.user || null
         };
+    });
+
+    // Protected route - bearer only
+    router.get('/api/protected', bearerAuth, async (ctx, next) => {
+        ctx.body = {
+            message: '✔️ Valid Bearer Token!',
+            user: ctx.state.user
+        };
+    });
+
+    router.get('/api/status', async (ctx, next) => {
+        const stats = manager.stats;
+        ctx.body = {
+            tunnels: stats.tunnels,
+            mem: process.memoryUsage(),
+            client: ctx.state.clientCert ? {
+                name: ctx.state.clientCert.commonName,
+                verified: ctx.state.clientCert.verified
+            } : null
+        };
+    });
+
+    router.get('/api/cert/config', async (ctx, next) => {
+        ctx.body = certAuth.getConfig();
+    });
+
+    router.post('/api/cert/allow/:clientName', async (ctx, next) => {
+        const clientName = ctx.params.clientName;
+        certAuth.addAllowedClient(clientName);
+        ctx.body = { success: true, message: `Client ${clientName} added to allowed list` };
     });
 
     app.use(router.routes());
     app.use(router.allowedMethods());
 
-    // Create tunnel request (?new)
-    app.use(async (ctx, next) => {
-        if (ctx.path !== '/') {
-            await next();
-            return;
-        }
+    // Client request: /?new
+    // app.use(async (ctx, next) => {
+    //     const path = ctx.request.path;
+    //     if (path !== '/') {
+    //         await next();
+    //         return;
+    //     }
 
-        const isNewClientRequest = ctx.query['new'] !== undefined;
-        if (!isNewClientRequest) {
-            ctx.redirect(landingPage);
-            return;
-        }
+    //     const isNewClientRequest = ctx.query['new'] !== undefined;
+    //     if (isNewClientRequest) {
+    //         const reqId = hri.random();
+    //         const info = await manager.newClient(reqId);
+    //         const nipIoDomain = 'tunnel.autosecnextgen.com/';
+    //         const url = 'https://' + info.id + '.' + nipIoDomain;
+    //         info.url = url;
 
-        if (!ctx.state.clientCert && !ctx.state.user) {
+    //         if (ctx.state.clientCert) {
+    //             info.client_authenticated = true;
+    //             info.client_name = ctx.state.clientCert.commonName;
+    //         }
+
+    //         ctx.body = info;
+    //         return;
+    //     }
+
+    //     ctx.redirect(landingPage);
+    // });
+
+    // Client request: /?new
+app.use(async (ctx, next) => {
+    const path = ctx.request.path;
+    if (path !== '/') {
+        await next();
+        return;
+    }
+
+    const isNewClientRequest = ctx.query['new'] !== undefined;
+
+    if (isNewClientRequest) {
+        const hasCert = ctx.state.clientCert && ctx.state.clientCert.verified;
+        const hasJWT = ctx.state.user != null;
+
+        if (!hasCert && !hasJWT) {
             ctx.status = 401;
             ctx.body = {
                 error: 'Unauthorized',
-                message: 'Provide a valid certificate or bearer token to request a new tunnel.'
+                message: 'You must provide a valid client certificate or bearer token.'
             };
             return;
         }
 
         const reqId = hri.random();
         const info = await manager.newClient(reqId);
-        const nipIoDomain = opt.domain || 'tunnel.autosecnextgen.com';
-        info.url = `https://${info.id}.${nipIoDomain}/`;
+        const nipIoDomain = 'tunnel.autosecnextgen.com/';
+        const url = 'https://' + info.id + '.' + nipIoDomain;
+        info.url = url;
+
+        if (hasCert) {
+            info.client_authenticated = true;
+            info.client_name = ctx.state.clientCert.commonName;
+        } else if (hasJWT) {
+            info.client_authenticated = true;
+            info.client_name = ctx.state.user.client_id || ctx.state.user.sub;
+        }
+
+        ctx.body = info;
+        return;
+    }
+
+    ctx.redirect(landingPage);
+});
+
+    // /tunnelid route
+    app.use(async (ctx, next) => {
+        const parts = ctx.request.path.split('/');
+        const reqId = parts[1];
+        if (!reqId || reqId === 'favicon.ico') {
+            await next();
+            return;
+        }
+
+        const info = await manager.newClient(reqId);
+        const url = schema + '://' + info.id + '.mytunnel';
+        info.url = url;
 
         if (ctx.state.clientCert) {
             info.client_authenticated = true;
             info.client_name = ctx.state.clientCert.commonName;
         }
 
-        if (ctx.state.user) {
-            info.client_authenticated = true;
-            info.client_name = ctx.state.user.client_id || ctx.state.user.sub;
-        }
-
         ctx.body = info;
     });
 
-    const server = http.createServer(app.callback());
+    const server = http.createServer();
+    const appCallback = app.callback();
 
-    server.on('request', (req, res) => {
-        const hostname = req.headers.host;
-        if (!hostname) {
-            res.statusCode = 400;
-            res.end('Host header is required');
-            return;
+   server.on('request', (req, res) => {
+    const hostname = req.headers.host;
+    if (!hostname) {
+        res.statusCode = 400;
+        res.end('Host header is required');
+        return;
+    }
+
+    const clientId = GetClientIdFromHostname(hostname);
+    
+    // Only manually handle if clientId is present (tunnel request)
+    if (clientId) {
+        if (opt.enableClientCerts && opt.requireClientCert) {
+            const clientCertVerify = req.headers['x-ssl-client-verify'];
+            const clientCertSubject = req.headers['x-ssl-client-s-dn'];
+
+            if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({
+                    error: 'Client certificate not verified by NGINX',
+                    details: clientCertVerify || 'No verification result'
+                }));
+                return;
+            }
         }
 
-        const clientId = GetClientIdFromHostname(hostname);
         const client = manager.getClient(clientId);
         if (!client) {
             res.statusCode = 404;
-            res.end('Tunnel not found');
+            res.end('404');
             return;
         }
 
         client.handleRequest(req, res);
-    });
+    } else {
+        // Let Koa (and koa-jwt) handle normal routes like /api/protected
+        appCallback(req, res);
+    }
+});
 
-    server.on('upgrade', (req, socket) => {
-        const hostname = req.headers.host;
-        const clientId = GetClientIdFromHostname(hostname);
-        const client = manager.getClient(clientId);
-        if (!client) {
+
+server.on('upgrade', (req, socket, head) => {
+    const hostname = req.headers.host;
+    if (!hostname) {
+        socket.destroy();
+        return;
+    }
+
+    // Apply same optional certificate check here
+    if (opt.enableClientCerts && opt.requireClientCert) {
+        const clientCertVerify = req.headers['x-ssl-client-verify'];
+        const clientCertSubject = req.headers['x-ssl-client-s-dn'];
+
+        if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
             socket.destroy();
             return;
         }
+    }
 
-        client.handleUpgrade(req, socket);
-    });
+    const clientId = GetClientIdFromHostname(hostname);
+    const client = manager.getClient(clientId);
+    if (!client) {
+        socket.destroy();
+        return;
+    }
+
+    client.handleUpgrade(req, socket);
+});
+
 
     return server;
-}
+};
