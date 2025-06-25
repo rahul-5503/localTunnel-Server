@@ -269,7 +269,7 @@ export default function(opt) {
     app.use(router.routes());
     app.use(router.allowedMethods());
 
-    // Client request: /?new
+    // Client request: /?new - Allow both JWT and Certificate authentication
     app.use(async (ctx, next) => {
         const path = ctx.request.path;
         if (path !== '/') {
@@ -279,21 +279,52 @@ export default function(opt) {
 
         const isNewClientRequest = ctx.query['new'] !== undefined;
         if (isNewClientRequest) {
+            // Check if user has valid authentication (either cert or JWT)
+            let hasValidAuth = false;
+            let authInfo = {};
+
+            // Check certificate auth
+            if (ctx.state.clientCert && ctx.state.clientCert.verified) {
+                hasValidAuth = true;
+                authInfo.client_authenticated = true;
+                authInfo.client_name = ctx.state.clientCert.commonName;
+                authInfo.auth_method = 'certificate';
+            }
+
+            // Check JWT auth
+            try {
+                await bearerAuth(ctx, async () => {
+                    if (ctx.state.user) {
+                        hasValidAuth = true;
+                        authInfo.jwt_authenticated = true;
+                        authInfo.jwt_user = ctx.state.user.sub || ctx.state.user.name || 'unknown';
+                        authInfo.auth_method = authInfo.auth_method ? 'both' : 'jwt';
+                    }
+                });
+            } catch (err) {
+                // JWT failed, but might still have cert auth
+            }
+
+            if (!hasValidAuth) {
+                ctx.status = 401;
+                ctx.body = {
+                    error: 'Authentication required',
+                    message: 'Valid client certificate or JWT Bearer token required to create new tunnels',
+                    certificate_present: !!ctx.state.clientCert,
+                    certificate_verified: ctx.state.clientCert ? ctx.state.clientCert.verified : false,
+                    jwt_present: !!ctx.headers.authorization
+                };
+                return;
+            }
+
             const reqId = hri.random();
             const info = await manager.newClient(reqId);
             const nipIoDomain = 'tunnel.autosecnextgen.com/';
             const url = 'https://' + info.id + '.' + nipIoDomain;
             info.url = url;
-
-            if (ctx.state.clientCert) {
-                info.client_authenticated = true;
-                info.client_name = ctx.state.clientCert.commonName;
-            }
-
-            if (ctx.state.user) {
-                info.jwt_authenticated = true;
-                info.jwt_user = ctx.state.user.sub || ctx.state.user.name || 'unknown';
-            }
+            
+            // Add authentication info to response
+            Object.assign(info, authInfo);
 
             ctx.body = info;
             return;
@@ -343,16 +374,18 @@ export default function(opt) {
         
         // Only manually handle if clientId is present (tunnel request)
         if (clientId) {
+            // Check certificate verification when required
             if (opt.enableClientCerts && opt.requireClientCert) {
                 const clientCertVerify = req.headers['x-ssl-client-verify'];
                 const clientCertSubject = req.headers['x-ssl-client-s-dn'];
 
-                if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
+                // Only require SUCCESS verification, allow NONE if certificates are optional
+                if (opt.requireClientCert && clientCertVerify !== 'SUCCESS') {
                     res.statusCode = 401;
                     res.setHeader('Content-Type', 'application/json');
                     res.end(JSON.stringify({
-                        error: 'Client certificate not verified by NGINX',
-                        details: clientCertVerify || 'No verification result',
+                        error: 'Client certificate required for tunnel access',
+                        details: `Verification status: ${clientCertVerify || 'NONE'}`,
                         certificate_verify: clientCertVerify,
                         certificate_subject: clientCertSubject
                     }));
