@@ -230,6 +230,16 @@ app.use(async (ctx, next) => {
 
     server.on('request', (req, res) => {
         console.log("server client request", req.headers);
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+        if (req.method === 'OPTIONS') {
+            res.statusCode = 204;
+            res.end();
+            return;
+        }
  
         const hostname = req.headers.host;
         if (!hostname) {
