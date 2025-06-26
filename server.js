@@ -80,6 +80,10 @@ export default function(opt) {
     app.use(jwtAuth);
 
 app.use(async (ctx, next) => {
+    if (ctx.path.startsWith('/video-feed/')) {
+        console.log('⚠ Skipping middleware for video stream path');
+        return; // avoid Koa processing
+    }
     const jwtUser = ctx.state.user;
     const certUser = ctx.state.clientCert;
 
@@ -233,28 +237,29 @@ app.use(async (ctx, next) => {
             res.end('Host header is required');
             return;
         }
-const clientCertVerify = req.headers['x-ssl-client-verify'];
-const clientCertSubject = req.headers['x-ssl-client-s-dn'];
-const authHeader = req.headers['authorization'];
+        const clientCertVerify = req.headers['x-ssl-client-verify'];
+        const clientCertSubject = req.headers['x-ssl-client-s-dn'];
+        const authHeader = req.headers['authorization'];
 
-const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
-const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
-
-if (!hasCert && !hasJWT) {
-    const rawHeaders = JSON.stringify(req.headers, null, 2);
-    console.warn('❌ No valid certificate or JWT provided');
-    if (!req.headers['authorization']) {
-        console.warn('🕵️ No Authorization header in request');
-    } else {
-        console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
-    }
-    console.warn(rawHeaders);
-    res.statusCode = 401;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-        error: 'Client certificate or Bearer token required',
-        certVerify: clientCertVerify || 'missing',
-        jwt: !!authHeader ? 'provided' : 'missing'
+        const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
+        const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
+        if (req.url.startsWith('/video-feed/')) {
+            console.log('🔓 Bypassing auth for video feed stream:', req.url);
+        } else if (!hasCert && !hasJWT) {
+        const rawHeaders = JSON.stringify(req.headers, null, 2);
+        console.warn('❌ No valid certificate or JWT provided');
+        if (!req.headers['authorization']) {
+            console.warn('🕵️ No Authorization header in request');
+        } else {
+            console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
+        }
+        console.warn(rawHeaders);
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+            error: 'Client certificate or Bearer token required',
+            certVerify: clientCertVerify || 'missing',
+            jwt: !!authHeader ? 'provided' : 'missing'
     }));
     return;
 }
