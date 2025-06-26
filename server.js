@@ -79,29 +79,6 @@ export default function(opt) {
 
     app.use(jwtAuth);
 
-app.use(async (ctx, next) => {
-    if (ctx.path.startsWith('/video-feed/')) {
-        console.log('⚠ Skipping middleware for video stream path');
-        return; // avoid Koa processing
-    }
-    const jwtUser = ctx.state.user;
-    const certUser = ctx.state.clientCert;
-
-    if (certUser) {
-        console.log(`✅ Cert Auth: ${certUser.commonName}`);
-    } else if (jwtUser) {
-        console.log(`✅ JWT Auth: ${jwtUser.sub}`);
-    } else {
-        console.log('❌ No valid authentication found');
-        ctx.status = 401;
-        ctx.body = { error: 'Authentication required (cert or JWT)' };
-        return;
-    }
-
-    await next();
-});
-
-
     router.get('/api/userinfo', async (ctx) => {
     if (ctx.state.user) {
         ctx.body = {
@@ -153,9 +130,36 @@ app.use(async (ctx, next) => {
         certAuth.addAllowedClient(clientName);
         ctx.body = { success: true, message: `Client ${clientName} added to allowed list` };
     });
+    
 
     app.use(router.routes());
     app.use(router.allowedMethods());
+
+    
+app.use(async (ctx, next) => {
+    if (ctx.path.startsWith('/video-feed/')) {
+        console.log('⚠ Skipping middleware for video stream path');
+        await next();
+        return; // avoid Koa processing
+    }
+    const jwtUser = ctx.state.user;
+    const certUser = ctx.state.clientCert;
+
+    if (certUser) {
+        console.log(`✅ Cert Auth: ${certUser.commonName}`);
+    } else if (jwtUser) {
+        console.log(`✅ JWT Auth: ${jwtUser.sub}`);
+    } else {
+        console.log('❌ No valid authentication found');
+        ctx.status = 401;
+        ctx.body = { error: 'Authentication required (cert or JWT)' };
+        return;
+    }
+
+    await next();
+});
+
+
 
     // root endpoint
     app.use(async (ctx, next) => {
@@ -253,31 +257,32 @@ app.use(async (ctx, next) => {
 
         const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
         const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
+
         if (req.url.startsWith('/video-feed/')) {
             console.log('🔓 Bypassing auth for video feed stream:', req.url);
         } else if (!hasCert && !hasJWT) {
-        const rawHeaders = JSON.stringify(req.headers, null, 2);
-        console.warn('❌ No valid certificate or JWT provided');
-        if (!req.headers['authorization']) {
-            console.warn('🕵️ No Authorization header in request');
-        } else {
-            console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
+                const rawHeaders = JSON.stringify(req.headers, null, 2);
+                console.warn('❌ No valid certificate or JWT provided');
+                if (!req.headers['authorization']) {
+                    console.warn('🕵️ No Authorization header in request');
+                } else {
+                    console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
+                }
+                console.warn(rawHeaders);
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({
+                    error: 'Client certificate or Bearer token required',
+                    certVerify: clientCertVerify || 'missing',
+                    jwt: !!authHeader ? 'provided' : 'missing'
+            }));
+            return;
         }
-        console.warn(rawHeaders);
-        res.statusCode = 401;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({
-            error: 'Client certificate or Bearer token required',
-            certVerify: clientCertVerify || 'missing',
-            jwt: !!authHeader ? 'provided' : 'missing'
-    }));
-    return;
-}
 
 
-if (hasCert) {
-    console.log(`✅ Client certificate verified: ${clientCertSubject}`);
-}
+        if (hasCert) {
+            console.log(`✅ Client certificate verified: ${clientCertSubject}`);
+        }
 
 
         const clientId = GetClientIdFromHostname(hostname);
@@ -307,21 +312,21 @@ if (hasCert) {
         }
 
         // Validate client certificate for websocket upgrades
-        // Trust certificate info from NGINX headersconst clientCertVerify = req.headers['x-ssl-client-verify'];
-const clientCertSubject = req.headers['x-ssl-client-s-dn'];
+                // Trust certificate info from NGINX headersconst clientCertVerify = req.headers['x-ssl-client-verify'];
+        const clientCertSubject = req.headers['x-ssl-client-s-dn'];
 
-if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
-    console.log('❌ Client certificate verification failed or missing from headers');
-    res.statusCode = 401;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-        error: 'Client certificate not verified by NGINX',
-        details: clientCertVerify || 'No verification result'
-    }));
-    return;
-}
+        if (clientCertVerify !== 'SUCCESS' || !clientCertSubject) {
+            console.log('❌ Client certificate verification failed or missing from headers');
+            res.statusCode = 401;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({
+                error: 'Client certificate not verified by NGINX',
+                details: clientCertVerify || 'No verification result'
+            }));
+            return;
+        }
 
-console.log(`✅ Client certificate verified: ${clientCertSubject}`);
+        console.log(`✅ Client certificate verified: ${clientCertSubject}`);
 
 
 
