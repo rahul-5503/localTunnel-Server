@@ -272,9 +272,10 @@ app.use(async (ctx, next) => {
         const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
         const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
 
-        if (req.url.startsWith('/video-feed/')) {
-            console.log('🔓 Bypassing auth for video feed stream:', req.url);
-        } else if (!hasCert && !hasJWT) {
+        // if (req.url.startsWith('/video-feed/')) {
+        //     console.log('🔓 Bypassing auth for video feed stream:', req.url);
+        //} else
+         if (!hasCert && !hasJWT) {
                 const rawHeaders = JSON.stringify(req.headers, null, 2);
                 console.warn('❌ No valid certificate or JWT provided');
                 if (!req.headers['authorization']) {
