@@ -7,7 +7,7 @@ import { hri } from 'human-readable-ids';
 import Router from 'koa-router';
 import jwt from 'koa-jwt';
 import jwksRsa from 'jwks-rsa';
-
+import url from 'url';
 import ClientManager from './lib/ClientManager.js';
 import CertificateAuth from './lib/CertificateAuth.js';
 
@@ -244,80 +244,153 @@ app.use(async (ctx, next) => {
     const server = http.createServer();
     const appCallback = app.callback();
 
-    server.on('request', (req, res) => {
-        console.log("server client request", req.headers);
-        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*'|| 'localhost' ||'https://black-forest-0273ca000.5.azurestaticapps.net');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
+server.on('request', (req, res) => {
+    console.log("server client request", req.headers);
 
-        if (req.method === 'OPTIONS') {
-            res.statusCode = 204;
-            res.end();
-            return;
-        }
+    // Set CORS + cache headers
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*' || 'localhost' || 'https://black-forest-0273ca000.5.azurestaticapps.net');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+    }
+
+    const hostname = req.headers.host;
+    if (!hostname) {
+        res.statusCode = 400;
+        res.end('Host header is required');
+        return;
+    }
+
+    // === 🔑 Parse token from query (for /video-feed/)
+    const reqUrl = new URL(req.url, `http://${req.headers.host}`);
+    const tokenFromQuery = reqUrl.searchParams.get('token');
+
+    const authHeader = req.headers['authorization'];
+    const hasHeaderJWT = authHeader?.startsWith('Bearer ');
+    const hasCert = req.headers['x-ssl-client-verify'] === 'SUCCESS' && req.headers['x-ssl-client-s-dn'];
+    const hasJWT = !!tokenFromQuery || hasHeaderJWT;
+
+    if (req.url.startsWith('/video-feed/')) {
+        console.log('🔓 video-feed stream requested');
+        console.log('🎫 Query token:', tokenFromQuery);
+    }
+
+    if (!hasCert && !hasJWT) {
+        console.warn('❌ No valid certificate or JWT provided');
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+            error: 'Client certificate or Bearer token required',
+            certVerify: req.headers['x-ssl-client-verify'] || 'missing',
+            jwt: hasHeaderJWT ? 'header' : tokenFromQuery ? 'query' : 'missing'
+        }));
+        return;
+    }
+
+    if (hasCert) {
+        console.log(`✅ Client certificate verified: ${req.headers['x-ssl-client-s-dn']}`);
+    }
+
+    const clientId = GetClientIdFromHostname(hostname);
+    console.log("clientId", clientId);
+    if (!clientId) {
+        appCallback(req, res); // fallback to Koa
+        return;
+    }
+
+    const client = manager.getClient(clientId);
+    if (!client) {
+        res.statusCode = 404;
+        res.end('404');
+        return;
+    }
+
+    client.handleRequest(req, res);
+});
+
+
+    // server.on('request', (req, res) => {
+    //     console.log("server client request", req.headers);
+    //     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*'|| 'localhost' ||'https://black-forest-0273ca000.5.azurestaticapps.net');
+    //     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    //     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    //     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    //     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    //     res.setHeader('Pragma', 'no-cache');
+    //     res.setHeader('Expires', '0');
+
+    //     if (req.method === 'OPTIONS') {
+    //         res.statusCode = 204;
+    //         res.end();
+    //         return;
+    //     }
  
-        const hostname = req.headers.host;
-        if (!hostname) {
-            res.statusCode = 400;
-            res.end('Host header is required');
-            return;
-        }
-        const clientCertVerify = req.headers['x-ssl-client-verify'];
-        const clientCertSubject = req.headers['x-ssl-client-s-dn'];
-        const authHeader = req.headers['authorization'];
+    //     const hostname = req.headers.host;
+    //     if (!hostname) {
+    //         res.statusCode = 400;
+    //         res.end('Host header is required');
+    //         return;
+    //     }
+    //     const clientCertVerify = req.headers['x-ssl-client-verify'];
+    //     const clientCertSubject = req.headers['x-ssl-client-s-dn'];
+    //     const authHeader = req.headers['authorization'];
 
-        const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
-        const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
+    //     const hasCert = clientCertVerify === 'SUCCESS' && clientCertSubject;
+    //     const hasJWT = !!authHeader && authHeader.startsWith('Bearer ');
 
-        // if (req.url.startsWith('/video-feed/')) {
-        //     console.log('🔓 Bypassing auth for video feed stream:', req.url);
-        //} else
-         if (!hasCert && !hasJWT) {
-                const rawHeaders = JSON.stringify(req.headers, null, 2);
-                console.warn('❌ No valid certificate or JWT provided');
-                if (!req.headers['authorization']) {
-                    console.warn('🕵️ No Authorization header in request');
-                } else {
-                    console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
-                }
-                console.warn(rawHeaders);
-                res.statusCode = 401;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({
-                    error: 'Client certificate or Bearer token required',
-                    certVerify: clientCertVerify || 'missing',
-                    jwt: !!authHeader ? 'provided' : 'missing'
-            }));
-            return;
-        }
-
-
-        if (hasCert) {
-            console.log(`✅ Client certificate verified: ${clientCertSubject}`);
-        }
+    //     // if (req.url.startsWith('/video-feed/')) {
+    //     //     console.log('🔓 Bypassing auth for video feed stream:', req.url);
+    //     //} else
+    //      if (!hasCert && !hasJWT) {
+    //             const rawHeaders = JSON.stringify(req.headers, null, 2);
+    //             console.warn('❌ No valid certificate or JWT provided');
+    //             if (!req.headers['authorization']) {
+    //                 console.warn('🕵️ No Authorization header in request');
+    //             } else {
+    //                 console.warn('🛑 Auth header found but malformed:', req.headers['authorization']);
+    //             }
+    //             console.warn(rawHeaders);
+    //             res.statusCode = 401;
+    //             res.setHeader('Content-Type', 'application/json');
+    //             res.end(JSON.stringify({
+    //                 error: 'Client certificate or Bearer token required',
+    //                 certVerify: clientCertVerify || 'missing',
+    //                 jwt: !!authHeader ? 'provided' : 'missing'
+    //         }));
+    //         return;
+    //     }
 
 
-        const clientId = GetClientIdFromHostname(hostname);
-        console.log("clientId", clientId);
-        if (!clientId) {
-            appCallback(req, res);
-            return;
-        }
+    //     if (hasCert) {
+    //         console.log(`✅ Client certificate verified: ${clientCertSubject}`);
+    //     }
 
-        const client = manager.getClient(clientId);
-        console.log(client);
-        if (!client) {
-            res.statusCode = 404;
-            res.end('404');
-            return;
-        }
 
-        client.handleRequest(req, res);
-    });
+    //     const clientId = GetClientIdFromHostname(hostname);
+    //     console.log("clientId", clientId);
+    //     if (!clientId) {
+    //         appCallback(req, res);
+    //         return;
+    //     }
+
+    //     const client = manager.getClient(clientId);
+    //     console.log(client);
+    //     if (!client) {
+    //         res.statusCode = 404;
+    //         res.end('404');
+    //         return;
+    //     }
+
+    //     client.handleRequest(req, res);
+    // });
 
     server.on('upgrade', (req, socket, head) => {
         console.log("server up client request", req.headers);
