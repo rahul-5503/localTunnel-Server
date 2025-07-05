@@ -41,8 +41,9 @@ export default function(opt) {
     algorithms: ['RS256'],
     passthrough: true ,
      getToken: (ctx) => {
-        if (ctx.path.startsWith('/video-feed/')) {            
-            return ctx.query?.token;
+        if (ctx.path.startsWith('/video-feed/')) {   
+            console.log("/video-feed",ctx.query.token);         
+            return ctx.query.token;
         }
         
         if (ctx.headers.authorization && ctx.headers.authorization.startsWith('Bearer ')) {
