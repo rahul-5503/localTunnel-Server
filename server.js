@@ -39,7 +39,18 @@ export default function(opt) {
     audience: 'AdministratorClientId_api', 
     issuer: 'https://autosecauthsts.azurewebsites.net',
     algorithms: ['RS256'],
-    passthrough: true 
+    passthrough: true ,
+     getToken: (ctx) => {
+        if (ctx.path.startsWith('/video-feed/')) {            
+            return ctx.query?.token;
+        }
+        
+        if (ctx.headers.authorization && ctx.headers.authorization.startsWith('Bearer ')) {
+            return ctx.headers.authorization.split(' ')[1];
+        }
+
+        return null;
+    }
     });
 
     function GetClientIdFromHostname(hostname) {
@@ -137,11 +148,11 @@ export default function(opt) {
 
     
 app.use(async (ctx, next) => {
-    if (ctx.path.startsWith('/video-feed/')) {
-        console.log('⚠ Skipping middleware for video stream path');
-        await next();
-        return; // avoid Koa processing
-    }
+    // if (ctx.path.startsWith('/video-feed/')) {
+    //     console.log('⚠ Skipping middleware for video stream path');
+    //     await next();
+    //     return; // avoid Koa processing
+    // }
     const jwtUser = ctx.state.user;
     const certUser = ctx.state.clientCert;
 
@@ -234,10 +245,13 @@ app.use(async (ctx, next) => {
 
     server.on('request', (req, res) => {
         console.log("server client request", req.headers);
-        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*'|| 'localhost' ||'https://black-forest-0273ca000.5.azurestaticapps.net');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
 
         if (req.method === 'OPTIONS') {
             res.statusCode = 204;
