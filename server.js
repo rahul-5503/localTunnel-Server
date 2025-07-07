@@ -245,16 +245,14 @@ app.use(async (ctx, next) => {
     const appCallback = app.callback();
 
 server.on('request', (req, res) => {
-    console.log("🔧 Incoming request");
-    console.log("Headers:", req.headers);
-    console.log("URL:", req.url);
+    console.log("server client request", req.headers);
 
-    // === Allow CORS + prevent caching ===
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*' || 'localhost');
+    // Set CORS + cache headers
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*' || 'localhost' || 'https://black-forest-0273ca000.5.azurestaticapps.net');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
 
@@ -271,20 +269,19 @@ server.on('request', (req, res) => {
         return;
     }
 
-    // ✅ Correctly parse the token from query string
-    let tokenFromQuery = null;
-    try {
-        const parsedUrl = new URL(req.url, `http://${hostname}`);
-        tokenFromQuery = parsedUrl.searchParams.get('token');
-        console.log("✅ Token from query:", tokenFromQuery);
-    } catch (err) {
-        console.error("❌ Failed to parse URL:", req.url);
-    }
+    // === 🔑 Parse token from query (for /video-feed/)
+    const reqUrl = new URL(req.url, `http://${req.headers.host}`);
+    const tokenFromQuery = reqUrl.searchParams.get('token');
 
     const authHeader = req.headers['authorization'];
     const hasHeaderJWT = authHeader?.startsWith('Bearer ');
     const hasCert = req.headers['x-ssl-client-verify'] === 'SUCCESS' && req.headers['x-ssl-client-s-dn'];
     const hasJWT = !!tokenFromQuery || hasHeaderJWT;
+
+    if (req.url.startsWith('/video-feed/')) {
+        console.log('🔓 video-feed stream requested');
+        console.log('🎫 Query token:', tokenFromQuery);
+    }
 
     if (!hasCert && !hasJWT) {
         console.warn('❌ No valid certificate or JWT provided');
@@ -303,9 +300,9 @@ server.on('request', (req, res) => {
     }
 
     const clientId = GetClientIdFromHostname(hostname);
-    console.log("🔗 clientId:", clientId);
+    console.log("clientId", clientId);
     if (!clientId) {
-        appCallback(req, res); // fallback to Koa
+        appCallback(req, res);// fallback to Koa
         return;
     }
 
@@ -318,7 +315,6 @@ server.on('request', (req, res) => {
 
     client.handleRequest(req, res);
 });
-
 
 
     // server.on('request', (req, res) => {
