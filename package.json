@@ -33,7 +33,7 @@
   },
   "scripts": {
     "test": "mocha --check-leaks --require esm './**/*.test.js'",
-    "start": "node bin/server.js --port 3000 --domain tunnel.autosecnextgen.com --enable-client-certs --allowed-clients raspberry-pi-client,other-client",
-    "dev": "node bin/server.js --port 3000 --domain tunnel.autosecnextgen.com --enable-client-certs --allowed-clients raspberry-pi-client,other-client"
+    "start": "node bin/server.js --port 3000 --domain prodtunnel.autosecnextgen.com --enable-client-certs --allowed-clients raspberry-pi-client,other-client",
+    "dev": "node bin/server.js --port 3000 --domain prodtunnel.autosecnextgen.com --enable-client-certs --allowed-clients raspberry-pi-client,other-client"
   }
 }
