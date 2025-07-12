@@ -10,7 +10,7 @@ import jwksRsa from 'jwks-rsa';
 import url from 'url';
 import ClientManager from './lib/ClientManager.js';
 import CertificateAuth from './lib/CertificateAuth.js';
-
+import https from 'https';
 const debug = Debug('localtunnel:server');
 
 export default function(opt) {
@@ -241,7 +241,7 @@ app.use(async (ctx, next) => {
         return;
     });
    
-    const server = http.createServer();
+    const server = https.createServer();
     const appCallback = app.callback();
 
 server.on('request', (req, res) => {
