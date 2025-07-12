@@ -194,7 +194,7 @@ app.use(async (ctx, next) => {
             console.log('making new client with id %s', reqId);
             debug('making new client with id %s', reqId);
             const info = await manager.newClient(reqId);
-            const nipIoDomain = 'tunnel.autosecnextgen.com/';            
+            const nipIoDomain = 'prodtunnel.autosecnextgen.com/';            
             const url = 'https' + '://' + info.id + '.' + nipIoDomain;
             info.url = url;
             
